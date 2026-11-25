@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>mobil_spirit — Kontrol Lanskap HP</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root {
+      --bg-0: #040b14;
+      --card: rgba(8, 23, 40, 0.95);
+      --card-hi: rgba(12, 34, 58, 0.97);
+      --border: #163a5a;
+      --border-glow: #25689e;
+      --text: #e8f3fc;
+      --muted: #7b9cb8;
+      --accent: #18a0fb;
+      --orange: #f97316;
+      --green: #22c55e;
+      --yellow: #facc15;
+      --red: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(ellipse 75% 45% at 50% 6%, rgba(20, 92, 148, 0.24) 0%, transparent 70%),
+        linear-gradient(180deg, #061220 0%, var(--bg-0) 100%);
+      color: var(--text);
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      overscroll-behavior: none;
+    }
+
+    .container {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding:
+        max(8px, env(safe-area-inset-top))
+        max(12px, env(safe-area-inset-right))
+        max(14px, env(safe-area-inset-bottom))
+        max(12px, env(safe-area-inset-left));
+    }
+
+    /* Peringatan ringan jika HP masih posisi berdiri (Portrait) */
+    .rotate-hint {
+      display: none;
+      background: rgba(249, 115, 22, 0.16);
+      border: 1px solid rgba(249, 115, 22, 0.5);
+      color: #fdba74;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 7px 12px;
+      border-radius: 10px;
+      margin-bottom: 10px;
+    }
+
+    @media (orientation: portrait) and (max-width: 768px) {
+      .rotate-hint {
+        display: block;
+      }
+    }
+
+    /* Topbar Ringkas */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      padding: 6px 12px;
+      background: rgba(7, 20, 35, 0.88);
+      border: 1px solid rgba(22, 58, 90, 0.8);
+      border-radius: 11px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .brand-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--red);
+      box-shadow: 0 0 10px var(--red);
+      flex-shrink: 0;
+    }
+
+    .brand-dot.online {
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+    }
+
+    .brand-sub {
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 11px;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    .pill-mini {
+      background: #0a1f34;
+      border: 1px solid var(--border);
+      padding: 4px 9px;
+      border-radius: 999px;
+      color: #c5def2;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .fs-btn {
+      background: #103252;
+      border: 1px solid #245c8c;
+      color: #e8f3fc;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .fs-btn:active {
+      background: var(--accent);
+    }
+
+    /* Baris Utama: Kiri (Maju/Mundur) | Tengah (MLX90614) | Kanan (Kiri/Kanan) */
+    .top-grid {
+      display: grid;
+      grid-template-columns: 144px 1fr 296px;
+      gap: 12px;
+      align-items: stretch;
+    }
+
+    .dir-col {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .side-dir-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      height: 100%;
+    }
+
+    .dir-btn {
+      background: linear-gradient(180deg, #0a1e33 0%, #061221 100%);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      min-height: 162px;
+      touch-action: none;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+      transition: transform 0.06s ease, border-color 0.1s ease, background 0.1s ease;
+    }
+
+    .side-dir-row .dir-btn {
+      min-height: 336px;
+    }
+
+    .dir-btn.active {
+      background: linear-gradient(180deg, #12436e 0%, #09243d 100%);
+      border-color: var(--accent);
+      box-shadow: 0 0 20px rgba(24, 160, 251, 0.34), inset 0 0 12px rgba(24, 160, 251, 0.2);
+      transform: scale(0.98);
+    }
+
+    .triangle {
+      font-size: 22px;
+      line-height: 1;
+      color: #f4f9ff;
+    }
+
+    .dir-label {
+      font-size: 11px;
+      letter-spacing: 1.5px;
+      font-weight: 800;
+      color: #cfe4f5;
+    }
+
+    /* Kartu Tengah */
+    .center-card {
+      background: linear-gradient(180deg, var(--card-hi) 0%, var(--card) 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 20px 16px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 336px;
+    }
+
+    .mode-tabs {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      display: flex;
+      gap: 6px;
+    }
+
+    .tab-btn {
+      background: #091d31;
+      border: 1px solid #1b4264;
+      color: #9ec0dc;
+      padding: 4px 11px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: #1496eb;
+      border-color: #4cc2ff;
+      color: #ffffff;
+    }
+
+    .sensor-title {
+      margin-top: 18px;
+      font-size: 14px;
+      color: #b7d3ea;
+      font-weight: 500;
+    }
+
+    .temp-value {
+      font-size: 50px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin: 6px 0 10px;
+      color: #f4f9ff;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .status-banner {
+      width: 100%;
+      max-width: 660px;
+      background: rgba(13, 66, 51, 0.58);
+      border: 1px solid rgba(45, 212, 191, 0.32);
+      color: #5eead4;
+      text-align: center;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1px;
+    }
+
+    .status-banner.normal {
+      background: rgba(20, 83, 45, 0.62);
+      border-color: rgba(74, 222, 128, 0.45);
+      color: #86efac;
+    }
+
+    .status-banner.alert {
+      background: rgba(127, 29, 29, 0.68);
+      border-color: rgba(248, 113, 113, 0.52);
+      color: #fca5a5;
+    }
+
+    .sub-note {
+      margin-top: 8px;
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .badges-row {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .pill-info {
+      background: #091c2f;
+      border: 1px solid #1b4162;
+      color: #c2daf0;
+      padding: 5px 13px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .speed-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .speed-btn {
+      background: #0a2036;
+      border: 1px solid #1c4466;
+      color: #d7e8f7;
+      padding: 6px 18px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .speed-btn.active {
+      background: linear-gradient(180deg, #fb923c 0%, var(--orange) 100%);
+      border-color: #fdba74;
+      color: #ffffff;
+    }
+
+    /* Baris Kontrol Capit & Angkat */
+    .act-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .act-card {
+      background: linear-gradient(180deg, var(--card-hi) 0%, var(--card) 100%);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .act-btn {
+      background: #091f35;
+      border: 1px solid #1b4366;
+      color: #e6f2fc;
+      padding: 9px 13px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      cursor: pointer;
+      white-space: nowrap;
+      touch-action: none;
+    }
+
+    .act-btn.active {
+      background: #124472;
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(24, 160, 251, 0.28);
+      transform: scale(0.98);
+    }
+
+    .slider-wrap {
+      flex: 1;
+      min-width: 100px;
+      padding: 0 4px;
+    }
+
+    .slider-label {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 3px;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--orange);
+      cursor: pointer;
+      height: 6px;
+    }
+
+    /* Garis Hazard Tipis */
+    .hazard-strip {
+      height: 6px;
+      margin: 12px 0;
+      border-radius: 4px;
+      background: repeating-linear-gradient(
+        -45deg,
+        #f59e0b,
+        #f59e0b 10px,
+        #101827 10px,
+        #101827 20px
+      );
+      opacity: 0.88;
+    }
+
+    /* Baris Status Bawah + Tombol STOP Merah */
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr) 160px;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .info-card {
+      background: linear-gradient(180deg, var(--card-hi) 0%, var(--card) 100%);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 100px;
+    }
+
+    .info-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #b8d3ea;
+      gap: 4px;
+    }
+
+    .info-tag {
+      color: var(--orange);
+      font-weight: 600;
+      font-size: 10px;
+      white-space: nowrap;
+    }
+
+    .info-main {
+      font-size: 17px;
+      font-weight: 700;
+      margin: 4px 0;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .info-sub {
+      font-size: 10px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .c-red { color: var(--red); }
+    .c-green { color: var(--green); }
+    .c-yellow { color: var(--yellow); }
+    .c-blue { color: #38bdf8; }
+
+    .estop-btn {
+      background: linear-gradient(180deg, #ff5e5e 0%, #dc2626 100%);
+      border: 1px solid #fca5a5;
+      border-radius: 12px;
+      color: #ffffff;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      font-weight: 800;
+      box-shadow: 0 6px 18px rgba(220, 38, 38, 0.36);
+      touch-action: none;
+    }
+
+    .estop-btn:active {
+      transform: scale(0.98);
+    }
+
+    .estop-title {
+      font-size: 18px;
+      letter-spacing: 1px;
+    }
+
+    .estop-sub {
+      font-size: 10px;
+      letter-spacing: 0.6px;
+    }
+
+    /* Panel Riwayat CSV */
+    .history-panel {
+      display: none;
+      margin-top: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+
+    .history-panel.show {
+      display: block;
+    }
+
+    .history-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+
+    .dl-btn {
+      background: #0ea5e9;
+      color: #fff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    pre {
+      margin: 0;
+      background: #040c16;
+      color: #cbe3f8;
+      padding: 8px 10px;
+      border-radius: 8px;
+      max-height: 150px;
+      overflow: auto;
+      font-size: 11px;
+    }
+
+    /* ================= KHUSUS HP LANSKAP (HEIGHT <= 520px) ================= */
+    @media (orientation: landscape) and (max-height: 520px) {
+      .container {
+        padding-top: 6px;
+        padding-bottom: 10px;
+      }
+
+      .topbar {
+        margin-bottom: 6px;
+        padding: 4px 10px;
+      }
+
+      .brand-sub {
+        display: none;
+      }
+
+      .top-grid {
+        grid-template-columns: 112px 1fr 224px;
+        gap: 8px;
+      }
+
+      .dir-col {
+        gap: 8px;
+      }
+
+      .side-dir-row {
+        gap: 8px;
+      }
+
+      .dir-btn {
+        min-height: 112px;
+        border-radius: 12px;
+        gap: 5px;
+      }
+
+      .side-dir-row .dir-btn {
+        min-height: 232px;
+      }
+
+      .triangle {
+        font-size: 19px;
+      }
+
+      .dir-label {
+        font-size: 10px;
+        letter-spacing: 1.2px;
+      }
+
+      .center-card {
+        min-height: 232px;
+        padding: 10px 14px 12px;
+        border-radius: 14px;
+      }
+
+      .mode-tabs {
+        top: 8px;
+        right: 10px;
+      }
+
+      .tab-btn {
+        padding: 3px 9px;
+        font-size: 10px;
+      }
+
+      .sensor-title {
+        margin-top: 12px;
+        font-size: 12px;
+      }
+
+      .temp-value {
+        font-size: 36px;
+        margin: 2px 0 6px;
+      }
+
+      .status-banner {
+        padding: 6px 10px;
+        font-size: 11px;
+      }
+
+      .sub-note {
+        margin-top: 5px;
+        font-size: 10px;
+      }
+
+      .badges-row {
+        margin-top: 6px;
+        gap: 6px;
+      }
+
+      .pill-info {
+        padding: 3px 10px;
+        font-size: 10px;
+      }
+
+      .speed-row {
+        margin-top: 8px;
+        gap: 6px;
+      }
+
+      .speed-btn {
+        padding: 4px 14px;
+        font-size: 11px;
+      }
+
+      .act-grid {
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .act-card {
+        padding: 6px 10px;
+        border-radius: 12px;
+        gap: 8px;
+      }
+
+      .act-btn {
+        padding: 7px 10px;
+        font-size: 10px;
+      }
+
+      .hazard-strip {
+        margin: 8px 0;
+        height: 5px;
+      }
+
+      .bottom-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .info-card {
+        min-height: 82px;
+        padding: 8px 10px;
+      }
+
+      .info-main {
+        font-size: 15px;
+      }
+
+      .estop-btn {
+        min-height: 82px;
+      }
+    }
+
+    /* ================= HP PORTRAIT (BERDIRI) ================= */
+    @media (orientation: portrait) and (max-width: 768px) {
+      .top-grid {
+        grid-template-columns: 1fr;
+      }
+      .dir-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+      .dir-btn, .side-dir-row .dir-btn {
+        min-height: 96px;
+      }
+      .act-grid {
+        grid-template-columns: 1fr;
+      }
+      .act-card {
+        flex-wrap: wrap;
+      }
+      .slider-wrap {
+        order: 3;
+        flex-basis: 100%;
+      }
+      .bottom-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+      .estop-btn {
+        grid-column: span 2;
+        min-height: 76px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="rotate-hint">Putar HP ke posisi Lanskap (Miring) untuk tampilan joystick kiri-kanan</div>
+
+    <!-- HEADER RINGKAS -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-dot" id="topDot"></span>
+        <span>mobil_spirit</span>
+        <span class="brand-sub">&bull; Kontrol &amp; Telemetri ESP32</span>
+      </div>
+      <div class="topbar-right">
+        <span class="pill-mini" id="topSpeed">PWM: 200</span>
+        <button class="fs-btn" id="btnFullscreen" onclick="toggleFullscreen()">Layar Penuh</button>
+      </div>
+    </header>
+
+    <!-- BARIS ATAS: JEMPOL KIRI (MAJU/MUNDUR) | TENGAH (SUHU) | JEMPOL KANAN (KIRI/KANAN) -->
+    <div class="top-grid">
+      <div class="dir-col">
+        <button class="dir-btn" data-arah="MAJU" aria-label="Maju">
+          <span class="triangle">&#9650;</span>
+          <span class="dir-label">MAJU</span>
+        </button>
+        <button class="dir-btn" data-arah="MUNDUR" aria-label="Mundur">
+          <span class="triangle">&#9660;</span>
+          <span class="dir-label">MUNDUR</span>
+        </button>
+      </div>
+
+      <section class="center-card">
+        <div class="mode-tabs">
+          <button class="tab-btn active" id="tabMonitoring" onclick="setTab('monitoring')">Monitoring</button>
+          <button class="tab-btn" id="tabRiwayat" onclick="setTab('riwayat')">Riwayat CSV</button>
+        </div>
+
+        <div class="sensor-title">Suhu Permukaan Objek (MLX90614)</div>
+        <div class="temp-value" id="tempValue">--.- &deg;C</div>
+        <div class="status-banner" id="statusBanner">MENUNGGU DATA</div>
+        <div class="sub-note">Ambang simulasi 30&deg;C &bull; Pembacaan sensor bukan diagnosis medis</div>
+
+        <div class="badges-row">
+          <div class="pill-info" id="pillBaterai">Baterai Utama: Menunggu pembacaan</div>
+          <div class="pill-info" id="pillKoneksi">Koneksi: Offline</div>
+        </div>
+
+        <div class="speed-row">
+          <button class="speed-btn" data-speed="140" onclick="setKecepatan(140, this)">Pelan</button>
+          <button class="speed-btn active" data-speed="200" onclick="setKecepatan(200, this)">Sedang</button>
+          <button class="speed-btn" data-speed="255" onclick="setKecepatan(255, this)">Cepat</button>
+        </div>
+      </section>
+
+      <div class="side-dir-row">
+        <button class="dir-btn" data-arah="KIRI" aria-label="Kiri">
+          <span class="triangle">&#9664;</span>
+          <span class="dir-label">KIRI</span>
+        </button>
+        <button class="dir-btn" data-arah="KANAN" aria-label="Kanan">
+          <span class="triangle">&#9654;</span>
+          <span class="dir-label">KANAN</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- BARIS KONTROL CAPIT & ANGKAT (TEKAN TAHAN = JALAN TERUS, LEPAS = BERHENTI) -->
+    <div class="act-grid">
+      <div class="act-card">
+        <button class="act-btn" id="btnTutupCapit" aria-label="Tutup Capit">TUTUP CAPIT (+10&deg;)</button>
+        <div class="slider-wrap">
+          <div class="slider-label" id="labelCapit">Capit 10&deg;</div>
+          <input type="range" id="sliderCapit" min="0" max="180" value="10" oninput="setSudutLangsung('capit', this.value)" />
+        </div>
+        <button class="act-btn" id="btnBukaCapit" aria-label="Buka Capit">BUKA CAPIT (-10&deg;)</button>
+      </div>
+
+      <div class="act-card">
+        <button class="act-btn" id="btnTurunAngkat" aria-label="Turun Angkat">TURUN ANGKAT (-10&deg;)</button>
+        <div class="slider-wrap">
+          <div class="slider-label" id="labelAngkat">Angkat 10&deg;</div>
+          <input type="range" id="sliderAngkat" min="0" max="180" value="10" oninput="setSudutLangsung('lengan', this.value)" />
+        </div>
+        <button class="act-btn" id="btnNaikAngkat" aria-label="Naik Angkat">NAIK ANGKAT (+10&deg;)</button>
+      </div>
+    </div>
+
+    <div class="hazard-strip"></div>
+
+    <!-- BARIS STATUS BAWAH + HENTI DARURAT -->
+    <div class="bottom-grid">
+      <div class="info-card">
+        <div class="info-head">
+          <span>ESP32 / WiFi</span>
+          <span class="info-tag" id="tagWifi">WiFi: -</span>
+        </div>
+        <div class="info-main c-red" id="valWifiStatus">Terputus</div>
+        <div class="info-sub" id="valBrokerSub">MQTT: broker.hivemq.com</div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-head">
+          <span>Server Dosen (Firebase)</span>
+          <span class="info-tag">Suhu Only</span>
+        </div>
+        <div class="info-main c-blue" id="valFirebase">Idle</div>
+        <div class="info-sub" id="valLastSend">Kirim terakhir: -</div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-head">
+          <span>Sensor MLX90614</span>
+          <span class="info-tag" id="tagSd">SD: -</span>
+        </div>
+        <div class="info-main c-yellow" id="valSensorState">Menunggu</div>
+        <div class="info-sub">File: log_robot.csv</div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-head">
+          <span>Baterai LiPo 2S &amp; RTC</span>
+          <span class="info-tag c-green" id="tagBaterai">Normal</span>
+        </div>
+        <div class="info-main" id="valBaterai">--.-- V</div>
+        <div class="info-sub" id="valRtc">RTC: ----/--/-- --:--:--</div>
+      </div>
+
+      <div class="info-card">
+        <div class="info-head">
+          <span>Keamanan &amp; Fail-Safe</span>
+          <span class="info-tag">Timeout 1.0s</span>
+        </div>
+        <div class="info-main c-green" id="valFailSafe">STOP (Siaga)</div>
+        <div class="info-sub" id="valPerintah">Perintah: STOP</div>
+      </div>
+
+      <button class="estop-btn" id="btnEstop" onclick="hentiDarurat()">
+        <span class="estop-title">&#9632; STOP</span>
+        <span class="estop-sub">HENTI DARURAT</span>
+      </button>
+    </div>
+
+    <!-- PANEL RIWAYAT CSV -->
+    <div class="history-panel" id="historyPanel">
+      <div class="history-actions">
+        <strong>Riwayat Telemetri (mobil_spirit)</strong>
+        <button class="dl-btn" onclick="unduhCSV()">Unduh CSV</button>
+      </div>
+      <pre id="csvLogBox">waktu,suhu_c,sd,firebase
+</pre>
+    </div>
+  </div>
+
+  <script>
+    const BASE_TOPIC = "mobil_spirit";
+    const client = mqtt.connect("wss://broker.hivemq.com:8884/mqtt");
+
+    let sudutCapit = 10;
+    let sudutAngkat = 10;
+    let arahAktif = null;
+    let keepAliveTimer = null;
+    let servoHoldTimer = null;
+    let servoHoldAktif = null;
+    let waktuTerakhir = "-";
+    let suhuTerakhir = null;
+    let sdTerakhir = "-";
+    let firebaseTerakhir = "-";
+    let csvRows = ["waktu,suhu_c,sd,firebase"];
+
+    function publishMQTT(subtopik, payload) {
+      if (client.connected) {
+        client.publish(`${BASE_TOPIC}/${subtopik}`, String(payload));
+      }
+    }
+
+    function updateLabelPerintah(teks, isMoving = false) {
+      document.getElementById("valPerintah").textContent = "Perintah: " + teks;
+      const fsEl = document.getElementById("valFailSafe");
+      if (isMoving) {
+        fsEl.textContent = teks + " (Aktif)";
+        fsEl.className = "info-main c-blue";
+      } else {
+        fsEl.textContent = "STOP (Siaga)";
+        fsEl.className = "info-main c-green";
+      }
+    }
+
+    // ================= LAYAR PENUH + KUNCI LANSKAP DI HP =================
+    async function toggleFullscreen() {
+      const btn = document.getElementById("btnFullscreen");
+      try {
+        if (!document.fullscreenElement) {
+          await document.documentElement.requestFullscreen();
+          btn.textContent = "Keluar Penuh";
+          if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock("landscape").catch(() => {});
+          }
+        } else {
+          await document.exitFullscreen();
+          btn.textContent = "Layar Penuh";
+        }
+      } catch (e) {}
+    }
+
+    // ================= LOGIKA MOTOR: TEKAN TAHAN JALAN (+KEEP-ALIVE), LEPAS STOP =================
+    function mulaiGerak(arah, btnEl) {
+      arahAktif = arah;
+      document.querySelectorAll(".dir-btn").forEach((b) => b.classList.remove("active"));
+      if (btnEl) btnEl.classList.add("active");
+
+      publishMQTT("arah", arah);
+      updateLabelPerintah(arah, true);
+
+      // Keep-alive tiap 400 ms selama tombol ditahan agar fail-safe 1.0s di ESP32 tidak memutus gerak
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = setInterval(() => {
+        if (arahAktif === arah) {
+          publishMQTT("arah", arah);
+        }
+      }, 400);
+    }
+
+    function berhentiGerak() {
+      clearInterval(keepAliveTimer);
+      keepAliveTimer = null;
+      arahAktif = null;
+      document.querySelectorAll(".dir-btn").forEach((b) => b.classList.remove("active"));
+      publishMQTT("arah", "STOP");
+      updateLabelPerintah("STOP", false);
+    }
+
+    document.querySelectorAll(".dir-btn").forEach((btn) => {
+      const arah = btn.dataset.arah;
+
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        mulaiGerak(arah, btn);
+      });
+
+      const lepas = () => {
+        if (arahAktif === arah) {
+          berhentiGerak();
+        }
+      };
+
+      btn.addEventListener("pointerup", lepas);
+      btn.addEventListener("pointercancel", lepas);
+      btn.addEventListener("lostpointercapture", lepas);
+    });
+
+    // ================= LOGIKA CAPIT & ANGKAT: TEKAN TAHAN JALAN, LEPAS BERHENTI =================
+    function terapkanSudut(jenis, nilaiBaru) {
+      const clamped = Math.max(0, Math.min(180, Number(nilaiBaru)));
+      if (jenis === "capit") {
+        sudutCapit = clamped;
+        document.getElementById("sliderCapit").value = clamped;
+        document.getElementById("labelCapit").textContent = `Capit ${clamped}°`;
+        publishMQTT("capit", clamped);
+        updateLabelPerintah(`CAPIT ${clamped}°`, true);
+      } else if (jenis === "lengan") {
+        sudutAngkat = clamped;
+        document.getElementById("sliderAngkat").value = clamped;
+        document.getElementById("labelAngkat").textContent = `Angkat ${clamped}°`;
+        publishMQTT("lengan", clamped);
+        updateLabelPerintah(`ANGKAT ${clamped}°`, true);
+      }
+    }
+
+    function mulaiHoldServo(jenis, delta, btnEl) {
+      hentikanHoldServo();
+      servoHoldAktif = jenis;
+      if (btnEl) btnEl.classList.add("active");
+
+      const awal = jenis === "capit" ? sudutCapit : sudutAngkat;
+      terapkanSudut(jenis, awal + delta);
+
+      servoHoldTimer = setInterval(() => {
+        const saatIni = jenis === "capit" ? sudutCapit : sudutAngkat;
+        const berikutnya = Math.max(0, Math.min(180, saatIni + delta));
+        if (berikutnya === saatIni) {
+          hentikanHoldServo();
+          return;
+        }
+        terapkanSudut(jenis, berikutnya);
+      }, 140);
+    }
+
+    function hentikanHoldServo() {
+      if (servoHoldTimer) {
+        clearInterval(servoHoldTimer);
+        servoHoldTimer = null;
+      }
+      if (servoHoldAktif !== null) {
+        servoHoldAktif = null;
+        if (arahAktif === null) {
+          updateLabelPerintah("STOP", false);
+        }
+      }
+      document.querySelectorAll(".act-btn").forEach((b) => b.classList.remove("active"));
+    }
+
+    function pasangHoldServo(btnId, jenis, delta) {
+      const btn = document.getElementById(btnId);
+      btn.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        btn.setPointerCapture(e.pointerId);
+        mulaiHoldServo(jenis, delta, btn);
+      });
+      btn.addEventListener("pointerup", hentikanHoldServo);
+      btn.addEventListener("pointercancel", hentikanHoldServo);
+      btn.addEventListener("lostpointercapture", hentikanHoldServo);
+    }
+
+    pasangHoldServo("btnTutupCapit", "capit", 10);
+    pasangHoldServo("btnBukaCapit", "capit", -10);
+    pasangHoldServo("btnTurunAngkat", "lengan", -10);
+    pasangHoldServo("btnNaikAngkat", "lengan", 10);
+
+    function setSudutLangsung(jenis, nilai) {
+      hentikanHoldServo();
+      terapkanSudut(jenis, nilai);
+    }
+
+    // ================= KECEPATAN & HENTI DARURAT =================
+    function setKecepatan(nilai, btnEl) {
+      document.querySelectorAll(".speed-btn").forEach((b) => b.classList.remove("active"));
+      if (btnEl) btnEl.classList.add("active");
+      document.getElementById("topSpeed").textContent = `PWM: ${nilai}`;
+      publishMQTT("kecepatan", nilai);
+    }
+
+    function hentiDarurat() {
+      hentikanHoldServo();
+      berhentiGerak();
+      publishMQTT("arah", "STOP");
+      updateLabelPerintah("STOP (DARURAT)", false);
+    }
+
+    // ================= TAB MONITORING & RIWAYAT CSV =================
+    function setTab(mode) {
+      const isHist = mode === "riwayat";
+      document.getElementById("tabMonitoring").classList.toggle("active", !isHist);
+      document.getElementById("tabRiwayat").classList.toggle("active", isHist);
+      document.getElementById("historyPanel").classList.toggle("show", isHist);
+    }
+
+    function catatBarisCSV() {
+      if (suhuTerakhir === null) return;
+      const baris = `${waktuTerakhir},${suhuTerakhir},${sdTerakhir},${firebaseTerakhir}`;
+      csvRows.push(baris);
+      document.getElementById("csvLogBox").textContent = csvRows.join("\n");
+    }
+
+    function unduhCSV() {
+      const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "log_robot.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    // ================= KONEKSI & PESAN MQTT =================
+    function setKoneksiUI(terhubung) {
+      const topDot = document.getElementById("topDot");
+      const pill = document.getElementById("pillKoneksi");
+      const wifiStatus = document.getElementById("valWifiStatus");
+      const tagWifi = document.getElementById("tagWifi");
+
+      if (terhubung) {
+        topDot.classList.add("online");
+        pill.textContent = "Koneksi: MQTT Aktif";
+        wifiStatus.textContent = "Terhubung";
+        wifiStatus.className = "info-main c-green";
+        tagWifi.textContent = "WiFi: Aktif";
+      } else {
+        topDot.classList.remove("online");
+        pill.textContent = "Koneksi: Offline";
+        wifiStatus.textContent = "Terputus";
+        wifiStatus.className = "info-main c-red";
+        tagWifi.textContent = "WiFi: -";
+      }
+    }
+
+    client.on("connect", () => {
+      setKoneksiUI(true);
+      client.subscribe(`${BASE_TOPIC}/#`);
+    });
+
+    client.on("offline", () => setKoneksiUI(false));
+    client.on("close", () => setKoneksiUI(false));
+
+    client.on("message", (topic, payload) => {
+      const msg = payload.toString().trim();
+      setKoneksiUI(true);
+
+      if (topic === `${BASE_TOPIC}/suhu`) {
+        const num = parseFloat(msg);
+        if (!isNaN(num)) {
+          suhuTerakhir = num.toFixed(2);
+          document.getElementById("tempValue").textContent = `${num.toFixed(1)} °C`;
+          document.getElementById("valSensorState").textContent = "Aktif";
+          document.getElementById("valSensorState").className = "info-main c-green";
+
+          const banner = document.getElementById("statusBanner");
+          if (num >= 30.0) {
+            banner.textContent = "SUHU DI ATAS AMBANG (≥ 30°C)";
+            banner.className = "status-banner alert";
+          } else {
+            banner.textContent = "SUHU NORMAL (< 30°C)";
+            banner.className = "status-banner normal";
+          }
+          catatBarisCSV();
+        }
+      } else if (topic === `${BASE_TOPIC}/waktu`) {
+        waktuTerakhir = msg;
+        document.getElementById("valRtc").textContent = `RTC: ${msg}`;
+      } else if (topic === `${BASE_TOPIC}/sd`) {
+        sdTerakhir = msg;
+        document.getElementById("tagSd").textContent = `SD: ${msg}`;
+      } else if (topic === `${BASE_TOPIC}/firebase`) {
+        firebaseTerakhir = msg;
+        const fbEl = document.getElementById("valFirebase");
+        fbEl.textContent = msg;
+        fbEl.className = msg === "OK" ? "info-main c-green" : "info-main c-yellow";
+        document.getElementById("valLastSend").textContent = `Kirim terakhir: ${waktuTerakhir}`;
+      }
+    });
+  </script>
+</body>
+</html>
